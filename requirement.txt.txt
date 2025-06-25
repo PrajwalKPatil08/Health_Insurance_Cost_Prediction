@@ -1,0 +1,257 @@
+streamlit
+pandas
+numpy
+scikit-learn
+
+#app.py
+import streamlit as st
+import json
+import hashlib
+import re
+from data_preparation import load_and_prepare_data
+from train_model import train_model, predict_cost
+
+# File path for the dataset
+DATASET_PATH = r"D:\\health_insurance\\content\\insurance.csv"
+USER_FILE = "users.json"
+
+# Hash function for passwords
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+# Password validation function
+def validate_password_strength(password):
+    if len(password) < 8:
+        return "Password must be at least 8 characters long."
+    if not re.search(r"[A-Z]", password):
+        return "Password must contain at least one uppercase letter."
+    if not re.search(r"[a-z]", password):
+        return "Password must contain at least one lowercase letter."
+    if not re.search(r"[0-9]", password):
+        return "Password must contain at least one number."
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        return "Password must contain at least one special character."
+    return None  # Return None if the password is valid
+
+# Load user credentials
+def load_users():
+    try:
+        with open(USER_FILE, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {"users": {}}
+
+# Save user credentials
+def save_users(users):
+    with open(USER_FILE, "w") as f:
+        json.dump(users, f, indent=4)
+
+# Registration page
+def registration_page():
+    st.title(" Register")
+    with st.form("registration_form"):
+        username = st.text_input("Username", help="Choose a unique username.")
+        password = st.text_input("Password", type="password", help="Choose a strong password.")
+        confirm_password = st.text_input("Confirm Password", type="password")
+        submit_button = st.form_submit_button("Register")
+
+        if submit_button:
+            if username and password and confirm_password:
+                if password != confirm_password:
+                    st.error("Passwords do not match!")
+                else:
+                    # Check password strength
+                    password_validation = validate_password_strength(password)
+                    if password_validation:
+                        st.error(password_validation)
+                    else:
+                        users = load_users()
+                        if username in users["users"]:
+                            st.error("Username already exists! Please choose another.")
+                        else:
+                            users["users"][username] = hash_password(password)
+                            save_users(users)
+                            st.success("Registration successful! Please go to the login page.")
+            else:
+                st.error("All fields are required!")
+
+# Login page
+def login_page():
+    st.title(" Login")
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit_button = st.form_submit_button("Login")
+
+        if submit_button:
+            # Check if username and password are not empty
+            if not username or not password:
+                st.error("Both fields are required!")
+                return
+
+            users = load_users()
+            
+            # Check if username exists in the loaded user data
+            if username not in users["users"]:
+                st.error("Username does not exist!")
+                return
+            
+            # Check if the password matches the stored hash
+            if users["users"][username] == hash_password(password):
+                # Successful login
+                st.session_state["authenticated"] = True
+                st.session_state["username"] = username
+                st.success(f"Welcome, {username}! Redirecting...")
+            else:
+                # Incorrect password
+                st.error("Incorrect password! Please try again.")
+
+# Prediction page
+def prediction_page():
+    st.title("📊 Medical Insurance Cost Prediction")
+
+    st.sidebar.header(f"Logged in as: {st.session_state['username']}")
+    st.sidebar.button("Logout", on_click=lambda: st.session_state.update({"authenticated": False, "username": None}))
+
+    st.write("## Enter the details below to predict the medical insurance cost:")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        age = st.number_input(
+            "Age", min_value=0, max_value=100, step=1, help="Enter the age of the person."
+        )
+        sex = st.selectbox(
+            "Sex", options=["Male", "Female"], help="Select the gender."
+        )
+        bmi = st.number_input(
+            "BMI", min_value=0.0, max_value=60.0, step=0.1, help="Enter the Body Mass Index."
+        )
+
+    with col2:
+        children = st.number_input(
+            "Number of Children", min_value=0, max_value=10, step=1, help="Enter the number of dependents."
+        )
+        smoker = st.selectbox(
+            "Smoker", options=["Yes", "No"], help="Does the person smoke?"
+        )
+        region = st.selectbox(
+            "Region",
+            options=["Southeast", "Southwest", "Northeast", "Northwest"],
+            help="Select the region.",
+        )
+
+    st.markdown("---")
+
+    st.write("### Summary of Inputs Provided:")
+    st.write(f"**Age:** {age}")
+    st.write(f"**Sex:** {sex}")
+    st.write(f"**BMI:** {bmi}")
+    st.write(f"**Number of Children:** {children}")
+    st.write(f"**Smoker:** {smoker}")
+    st.write(f"**Region:** {region}")
+
+    st.markdown("---")
+
+    predict_button = st.button("Predict Insurance Cost")
+
+    if predict_button:
+        # Map inputs to encoded values
+        sex_encoded = 0 if sex == "Male" else 1
+        smoker_encoded = 0 if smoker == "Yes" else 1
+        region_map = {"Southeast": 0, "Southwest": 1, "Northeast": 2, "Northwest": 3}
+        region_encoded = region_map[region]
+
+        input_data = (age, sex_encoded, bmi, children, smoker_encoded, region_encoded)
+        
+        # Make sure the model is trained and then predict
+        try:
+            # Check if the model has been trained
+            if 'regressor' not in st.session_state:
+                # Load data and train model if not already trained
+                X, Y = load_and_prepare_data(DATASET_PATH)
+                regressor, r2_train, r2_test = train_model(X, Y)
+                st.session_state['regressor'] = regressor  # Save trained model in session state
+            
+            # Use the trained model to predict the cost
+            regressor = st.session_state['regressor']
+            cost = predict_cost(regressor, input_data)
+            st.success(f"The predicted medical insurance cost is: **Rs. {cost:.2f}**")
+        except Exception as e:
+            st.error(f"Prediction failed: {e}")
+
+# Main application
+def main():
+    st.set_page_config(page_title="Health Insurance Cost Prediction", layout="centered")
+
+    if "authenticated" not in st.session_state:
+        st.session_state["authenticated"] = False
+        st.session_state["username"] = None
+
+    if not st.session_state["authenticated"]:
+        option = st.sidebar.selectbox("Choose an option", ["Login", "Register"])
+        if option == "Register":
+            registration_page()
+        elif option == "Login":
+            login_page()
+    else:
+        prediction_page()
+
+if __name__ == "__main__":
+    main()
+
+#data_preparation
+import pandas as pd
+
+def load_and_prepare_data(file_path):
+    # Load dataset
+    insurance_dataset = pd.read_csv(file_path)
+    
+    # Clean 'charges' column: remove commas and convert to float
+    insurance_dataset['charges'] = insurance_dataset['charges'].replace({',': ''}, regex=True).astype(float)
+    
+    # Encoding categorical columns
+    insurance_dataset.replace({'sex': {'male': 0, 'female': 1}}, inplace=True)
+    insurance_dataset.replace({'smoker': {'yes': 0, 'no': 1}}, inplace=True)
+    insurance_dataset.replace({'region': {'southeast': 0, 'southwest': 1, 'northeast': 2, 'northwest': 3}}, inplace=True)
+    
+    # Features and target
+    X = insurance_dataset.drop(columns='charges', axis=1)
+    Y = insurance_dataset['charges']
+    return X, Y
+
+# train_model.py
+
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression
+from sklearn import metrics
+
+def train_model(X, Y):
+    # Split data into training and testing sets (80% train, 20% test)
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_state=2)
+    
+    # Train Linear Regression model
+    regressor = LinearRegression()
+    regressor.fit(X_train, Y_train)
+    
+    # Evaluate the model
+    train_pred = regressor.predict(X_train)
+    test_pred = regressor.predict(X_test)
+    r2_train = metrics.r2_score(Y_train, train_pred)
+    r2_test = metrics.r2_score(Y_test, test_pred)
+    
+    return regressor, r2_train, r2_test
+
+def predict_cost(model, input_data):
+    # Convert input data to numpy array and reshape for prediction
+    input_data_as_array = np.asarray(input_data).reshape(1, -1)
+    prediction = model.predict(input_data_as_array)
+    return prediction[0]
+
+
+
+
+
+
+
+

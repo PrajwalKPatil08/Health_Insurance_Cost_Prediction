@@ -1,0 +1,4 @@
+Full Name,Username,Age,Sex,BMI,Children,Smoker,Region,Alcohol Consumption,Family Disease History,Stress Level,Exercise Days,Sleep Hours,Diet Type,Predicted Cost,Timestamp
+Rushikesh Joshi,Finwizz,55,Male,19.1,2,Yes,Southeast,Yes,Yes,High,6,7,Balanced,1910750.15,2025-05-15 11:09:49
+Rohan Phole,Finwizz,23,Male,20.0,0,Yes,Southwest,Yes,No,Medium,5,6,Balanced,1379728.73,2025-05-15 11:22:44
+Atharv Patil,Finwizz,44,Male,19.01,0,Yes,Southwest,No,Yes,Medium,4,4,Balanced,1874199.93,2025-05-15 12:28:41
